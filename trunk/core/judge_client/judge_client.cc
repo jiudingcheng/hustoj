@@ -162,7 +162,6 @@ static int full_diff = 0;
 static int use_max_time = 0;
 static int time_limit_to_total= 0;
 static int total_time= 0;
-
 static int http_judge = 0;
 static int copy_data= 0;
 static char http_baseurl[BUFFER_SIZE/10];
@@ -170,6 +169,9 @@ static char http_username[BUFFER_SIZE/10];
 static char http_password[BUFFER_SIZE/10];
 static int http_download = 1;
 static double cpu_compensation = 1.0;
+//by xcg
+static char c_str_null[2]="";
+static char c_mh[2]=":";
 
 static int shm_run = 0;
 
@@ -181,7 +183,6 @@ static int python_free=0;
 static const char *tbname = "solution";
 int num_of_test = 0;
 //static int sleep_tmp;
-
 static int py2=1; // caution: py2=1 means default using py3
 
 #define ZOJ_COM
@@ -192,6 +193,39 @@ MYSQL *conn;
 static char jresult[14][4]={"PD","PR","CI","RJ","AC","PE","WA","TLE","MLE","OLE","RE","CE","CO","TR"};
 static char lang_ext[21][8] = {"c", "cc", "pas", "java", "rb", "sh", "py",
 			       "php", "pl", "cs", "m", "bas", "scm", "c", "cc", "lua", "js", "go","sql","f95","m"};
+//2021.02.22 by xcg ;字符中连接
+char *str_join(char *a, char *b) {
+    char *c = (char *) malloc(strlen(a) + strlen(b) + 1); //局部变量，用malloc申请内存
+    if (c == NULL) exit (1);
+    char *tempc = c; //把首地址存下来
+    while (*a != '\0') {
+        *c++ = *a++;
+    }
+    while ((*c++ = *b++) != '\0') {
+        ;
+    }
+    //注意，此时指针c已经指向拼接之后的字符串的结尾'\0' !
+    return tempc;//返回值是局部malloc申请的指针变量，需在函数调用结束后free之
+}
+char *get_key(char *dst,char *src)
+{
+  char *p=dst;
+  char *q=src;
+  int length=strlen(src);
+  int len,start=0;
+  len = length -3;
+  
+  if(start>=length||start<0) return NULL;
+  if(len>length) len=length-start;
+  q+=start;
+  while(len--)
+  {
+    *(p++)=*(q++);
+  }
+  *(p++)='\0';
+  return dst;
+}
+				   
 //static char buf[BUFFER_SIZE];
 void print_arm_regs(long long unsigned int *d){
 	for(int i=0;i<32;i++){
@@ -495,7 +529,7 @@ void init_mysql_conf()
 			read_int(buf, "OJ_USE_MAX_TIME", &use_max_time);
 			read_int(buf, "OJ_TIME_LIMIT_TO_TOTAL", &time_limit_to_total);
 			read_int(buf, "OJ_USE_PTRACE", &use_ptrace);
-			read_int(buf, "OJ_COMPILE_CHROOT", &compile_chroot);
+			//read_int(buf, "OJ_COMPILE_CHROOT", &compile_chroot);
 			read_int(buf, "OJ_TURBO_MODE", &turbo_mode);
 			read_double(buf, "OJ_CPU_COMPENSATION", &cpu_compensation);
 			read_int(buf, "OJ_PYTHON_FREE", &python_free);
@@ -843,24 +877,24 @@ void _update_solution_mysql(int solution_id, int result, int time, int memory,
 }
 #endif
 void _update_solution_http(int solution_id, int result, int time, int memory,
-						   int sim, int sim_s_id, double pass_rate)
+						   int sim, int sim_s_id, double pass_rate, char key_set[])//by xcg 2021-02-22
 {
 	const char *cmd =
-		" wget --post-data=\"update_solution=1&sid=%d&result=%d&time=%d&memory=%d&sim=%d&simid=%d&pass_rate=%f\" --load-cookies=cookie --save-cookies=cookie --keep-session-cookies -q -O - \"%s/admin/problem_judge.php\"";
+		" wget --post-data=\"update_solution=1&sid=%d&result=%d&time=%d&memory=%d&sim=%d&simid=%d&pass_rate=%f&key_set=%s\" --load-cookies=cookie --save-cookies=cookie --keep-session-cookies -q -O - \"%s/admin/problem_judge.php\"";//by xcg 2021-02-22
 	FILE *fjobs = read_cmd_output(cmd, solution_id, result, time, memory, sim,
-								  sim_s_id, pass_rate, http_baseurl);
+								  sim_s_id, pass_rate, key_set, http_baseurl);//by xcg 2021-02-22
 	//fscanf(fjobs,"%d",&ret);
 	pclose(fjobs);
 }
 void update_solution(int solution_id, int result, int time, int memory, int sim,
-					 int sim_s_id, double pass_rate)
+					 int sim_s_id, double pass_rate, char key_set[])// by xcg 2021-02-22
 {
 	if (result == OJ_TL && memory == 0)
 		result = OJ_ML;
 	if (http_judge)
 	{
 		_update_solution_http(solution_id, result, time, memory, sim, sim_s_id,
-							  pass_rate);
+							  pass_rate, key_set);//by xcg 2021-02-22
 	}
 	else
 	{
@@ -1196,6 +1230,7 @@ void umount(char *work_dir)
 	execute_cmd("/bin/rmdir %s/* ", work_dir);
 	execute_cmd("/bin/rmdir %s/log/* ", work_dir);
 }
+
 int compile(int lang, char *work_dir)
 {
 	if( lang == 6 || lang == 16 ) return 0; // python / js don't compile
@@ -3133,7 +3168,7 @@ int main(int argc, char **argv)
 	if (Compile_OK != 0)
 	{
 		addceinfo(solution_id);
-		update_solution(solution_id, OJ_CE, 0, 0, 0, 0, 0.0);
+		update_solution(solution_id, OJ_CE, 0, 0, 0, 0, 0.0, c_str_null);//by xcg 2021-02-22
 		if(!turbo_mode)update_user(user_id);
 		if(!turbo_mode)update_problem(p_id,cid);
 #ifdef _mysql_h
@@ -3147,7 +3182,7 @@ int main(int argc, char **argv)
 	else
 	{
 		if (!turbo_mode)
-			update_solution(solution_id, OJ_RI, 0, 0, 0, 0, 0.0);
+			update_solution(solution_id, OJ_RI, 0, 0, 0, 0, 0.0, c_str_null);//by xcg 2021-02-22
 		umount(work_dir);
 	}
 	//exit(0);
@@ -3266,7 +3301,7 @@ int main(int argc, char **argv)
 		{
 			addcustomout(solution_id);
 		}
-		update_solution(solution_id, OJ_TR, usedtime, topmemory >> 10, 0, 0, 0);
+		update_solution(solution_id, OJ_TR, usedtime, topmemory >> 10, 0, 0, 0, c_str_null);//by xcg 2021-02-22
 		clean_workdir(work_dir);
 		exit(0);
 	}
@@ -3281,6 +3316,13 @@ int main(int argc, char **argv)
 	}
 	rewinddir(dp);
 */	
+	//by xcg 2021-02-22
+	char c_t[1] = "";//by xcg 2021-02-22
+	char *c_arr = str_join(c_t, c_t);//by xcg 2021-02-22
+	char c_ac_key[256];//by xcg 2021-02-22
+	char c_split[2] = ",";//by xcg 2021-02-22
+	char c_char[BUFFER_SIZE];//by xcg 2021-02-22
+	int xcg_flg = 0;//by xcg 2021-02-22
 	num_of_test=namelist_len;
 
 	for (int i=0 ; (oi_mode || ACflg == OJ_AC || ACflg == OJ_PE) && i < namelist_len ;i++)
@@ -3330,6 +3372,12 @@ int main(int argc, char **argv)
 						   outfile, userfile, PEflg, lang, work_dir, topmemory,
 						   mem_lmt, solution_id, num_of_test);
 			time_space_index+=sprintf(time_space_table+time_space_index,"%s:%s mem=%dk time=%dms\n",infile+strlen(oj_home)+5,jresult[ACflg],topmemory/1024,usedtime);
+			//by xcg 2021-02-22
+			get_key(c_ac_key, dirp->d_name);//取得AC后的相应的测试点编号
+			sprintf(c_char,xcg_flg>0?",{'k':'%s','r':%d,'t':%d,'m':%d}":"{'k':'%s','r':%d,'t':%d,'m':%d}",c_ac_key,ACflg,usedtime,topmemory >> 10);
+			xcg_flg=1;
+			c_arr=str_join(c_arr,c_char);
+			
 			if (use_max_time)
 			{
 				max_case_time =
@@ -3394,14 +3442,14 @@ int main(int argc, char **argv)
 			pass_rate /= total_mark;
 		}
 		update_solution(solution_id, finalACflg, usedtime, topmemory >> 10, sim,
-						sim_s_id, pass_rate);
+						sim_s_id, pass_rate, c_arr);//by xcg 2021-02-22
 	}
 	else
 	{
 		if(ACflg==OJ_AC) pass_rate=1.0;
 		else pass_rate=0.0;
 		update_solution(solution_id, ACflg, usedtime, topmemory >> 10, sim,
-						sim_s_id, pass_rate);
+						sim_s_id, pass_rate, c_arr);//by xcg 2021-02-22
 	}
 	FILE *df=fopen("diff.out","a");
 	fprintf(df,"time_space_table:\n%s\n",time_space_table);
